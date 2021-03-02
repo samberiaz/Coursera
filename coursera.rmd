@@ -1,0 +1,87 @@
+library(caret)
+library(dplyr)
+library(xgboost)
+library(ggplot2)
+##load dataset
+data_dir=c("C:/Users/sambe/Downloads")
+training_file = "pml-training.csv"
+test_file = "pml-testing.csv"
+train <- read.csv(file.path(data_dir, training_file))
+test <- read.csv(file.path(data_dir, test_file))
+
+dim(train)
+
+## Percentage of missing data
+colMeans(is.na(train))
+
+trainClasse = train$classe
+trainRaw = train[, sapply(train, is.numeric)]
+testRaw = test[, sapply(test, is.numeric)]
+
+# Remove columns with NA value
+trainFilter <- trainRaw[, colSums(is.na(trainRaw)) == 0]
+# Attach Classe variable
+trainFilter$classe = trainClasse
+testFilter <- testRaw[, colSums(is.na(testRaw)) == 0]
+
+
+dim(trainFilter)
+dim(testFilter)
+
+## remove unwanted columns
+unwanted = !grepl("X|timestamp", colnames(trainFilter))
+cols = colnames(trainFilter)[unwanted]
+trainFilter = trainFilter %>%
+select(cols)
+
+
+unwanted = !grepl("X|timestamp", colnames(testFilter))
+cols = colnames(testFilter)[unwanted]
+testFilter = testFilter %>%
+select(cols)
+
+dim(trainFilter)
+dim(testFilter)
+
+## create test train data split
+set.seed(120)
+inTrain <- createDataPartition(trainFilter$classe, p=0.70, list=F)
+trainData <- trainFilter[inTrain, ]
+validationData <- trainFilter[-inTrain, ]
+dim(trainData)
+
+## use random forest
+controlRf <- trainControl(method="cv", 5, allowParallel = TRUE)
+modelRf <- train(classe ~ ., data=trainData, method="rf", trControl=controlRf, ntree=250)
+modelRf
+
+predict_rf <- predict(modelRf, validationData)
+confusionMatrix(validationData$classe, predict_rf)
+
+
+## use xgboost
+controlXGB <- trainControl(method="cv", 5, allowParallel = TRUE)
+modelXGB <- train(classe ~ ., data=trainData, method="xgbTree", trControl=controlXGB)
+
+modelXGB
+
+predict_XGB <- predict(modelXGB, validationData)
+confusionMatrix(validationData$classe, predict_XGB)
+
+## accuracy imporved
+# collect resamples
+model_results <- resamples(list(RF=modelRf, XGB=modelXGB))
+# summarize the distributions
+summary(model_results)
+# boxplots of results
+bwplot(model_results)
+# dot plots of results
+dotplot(model_results)
+
+
+## final result
+resultRf <- predict(modelRf, testFilter[, -length(names(testFilter))])
+resultXGB <- predict(modelXGB, testFilter[, -length(names(testFilter))])
+resultRf
+resultXGB
+confusionMatrix(resultRf, resultXGB)
